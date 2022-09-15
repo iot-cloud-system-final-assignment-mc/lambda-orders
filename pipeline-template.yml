@@ -1,10 +1,9 @@
 AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
-Description: "Template to deploy the CI/CD pipeline for the web-client application"
+Description: "Template to deploy the CI/CD pipeline for the lambda orders microservice"
 
-
-Parameters: 
-  ProjectSource: 
+Parameters:
+  ProjectSource:
     Type: String
     Default: "https://github.com/iot-cloud-system-final-assignment-mc/web-client.git"
     Description: "Source control URL (e.g. Github)"
@@ -13,7 +12,7 @@ Parameters:
     Default: iot-cloud-system-final-assignment-mc
   GithubRepo:
     Type: String
-    Default: web-client
+    Default: lambda-orders
   GithubOAuthToken:
     Type: String
     Description: "Github personal access token"
@@ -21,114 +20,60 @@ Parameters:
     Type: String
     Default: main
     Description: "e.g. master or main"
-  # Distribution:
-  #   Type: String
-  #   Description: "Id of the distribution"
-  
+  StackName:
+    Type: String
+    Default: lambda-orders
+    Description: "Name of the stack"
+  s3SamBucket:
+    Type: String
+    Default: "aws-sam-cli-managed-default-samclisourcebucket-11otlm1qgtcw0"
+    Description: "Name of the S3 bucket that sam uses to store the artifacts"
+
 Resources:
   CodePipeline:
-    Type: 'AWS::CodePipeline::Pipeline'
+    Type: "AWS::CodePipeline::Pipeline"
     Properties:
       RoleArn: !GetAtt CodePipeLineRole.Arn
       ArtifactStore:
         Location: !Ref PipelineBucket
         Type: S3
       Stages:
-        - 
-          Name: Source
-          Actions: 
-            - 
-              Name: SourceAction
-              ActionTypeId: 
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
                 Category: Source
                 Owner: ThirdParty
                 Provider: GitHub
                 Version: 1
-              OutputArtifacts: 
-                - 
-                  Name: WebClient
+              OutputArtifacts:
+                - Name: WebClient
               Configuration:
                 Owner: !Ref GithubOwner
                 Repo: !Ref GithubRepo
                 Branch: !Ref GithubBranch
                 OAuthToken: !Ref GithubOAuthToken
-        - 
-          Name: Build
-          Actions: 
-            - 
-              Name: BuildAction
-              ActionTypeId: 
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
                 Category: Build
                 Owner: AWS
                 Version: 1
                 Provider: CodeBuild
-              InputArtifacts: 
-                - 
-                  Name: WebClient
-              OutputArtifacts: 
-                - 
-                  Name: WebClientBuild
+              InputArtifacts:
+                - Name: WebClient
+              OutputArtifacts:
+                - Name: WebClientBuild
               Configuration:
                 ProjectName: !Ref CodeBuild
-  CodeBuildRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - 
-            Effect: Allow
-            Principal:
-              Service:
-                - "codebuild.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Path: /service-role/
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement: 
-              - 
-                Effect: Allow
-                Action:
-                  - "s3:GetObject"
-                  - "s3:GetObjectVersion"
-                  - "s3:GetBucketVersioning"
-                  - "s3:PutObject"
-                Resource: 
-                  - !GetAtt PipelineBucket.Arn
-                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
-              - 
-                Effect: Allow
-                Action:
-                  - "s3:DeleteObject"
-                  - "s3:GetObject"
-                  - "s3:GetObjectVersion"
-                  - "s3:GetBucketVersioning"
-                  - "s3:ListBucket"
-                  - "s3:PutObject"
-                  - "s3:PutObjectAcl"
-                Resource: 
-                  - !Join ['', ["arn:aws:s3:::", !Ref DeployBucket]]
-                  - !Join ['', [!Join [ '', [ "arn:aws:s3:::", !Ref DeployBucket ] ], "/*"]]
-              -
-                Effect: Allow
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "cloudfront:CreateInvalidation"
-                Resource:
-                  - "*"
   CodePipeLineRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - 
-            Effect: Allow
+          - Effect: Allow
             Principal:
               Service:
                 - "codepipeline.amazonaws.com"
@@ -138,33 +83,30 @@ Resources:
         - PolicyName: root
           PolicyDocument:
             Version: "2012-10-17"
-            Statement: 
-              - 
-                Effect: Allow
+            Statement:
+              - Effect: Allow
                 Action:
                   - "s3:GetObject"
                   - "s3:GetObjectVersion"
                   - "s3:GetBucketVersioning"
                   - "s3:PutObject"
-                Resource: 
+                Resource:
                   - !GetAtt PipelineBucket.Arn
-                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
-              - 
-                Effect: Allow  
+                  - !Join ["", [!GetAtt PipelineBucket.Arn, "/*"]]
+              - Effect: Allow
                 Action:
                   - "codebuild:BatchGetBuilds"
                   - "codebuild:StartBuild"
                 Resource: "*"
+
   CodeBuild:
-    Type: 'AWS::CodeBuild::Project'
+    Type: "AWS::CodeBuild::Project"
     Properties:
       Name: !Sub ${AWS::StackName}-CodeBuild
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: CODEPIPELINE
         Name: WebClientProject
-      Source: 
-        Type: CODEPIPELINE
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Type: LINUX_CONTAINER
@@ -179,22 +121,71 @@ Resources:
                 nodejs: 14.x
             pre_build:
               commands:
-                - cd application/
-                - echo Installing source NPM dependencies...
+                - echo "Prebuild started on `date`"
+                - cd code
                 - npm install
+                - cd ..
+                - echo "Prebuild completed on `date`"
             build:
               commands:
-                - echo Build started on `date`
-                - npm run build
+                - echo "Build started on `date`"
+                - sam build
+                - echo "Build completed on `date`"
             post_build:
               on-failure: CONTINUE
               commands:
-                aws s3 sync --delete --cache-control no-store build s3://${DeployBucket}
-          artifacts:
-            files:
-              - '**/*'
-            base-directory: application/build
+                - echo "Postbuild started on `date`"
+                - sam deploy -t ./.aws-sam/build/template.yaml --stack-name ${StackName} --s3-bucket ${s3SamBucket} --s3-prefix ${StackName} --region ${AWS::Region} --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset
+                - echo "Postbuild completed on `date`"
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /service-role/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "iam:*"
+                  - "cloudformation:*"
+                  - "lambda:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "s3:*"
+                Resource:
+                  - !Join ["", ["arn:aws:s3:::", !Ref s3SamBucket]]
+                  - !Join [
+                      "",
+                      [!Join ["", ["arn:aws:s3:::", !Ref s3SamBucket]], "/*"],
+                    ]
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                Resource:
+                  - !GetAtt PipelineBucket.Arn
+                  - !Join ["", [!GetAtt PipelineBucket.Arn, "/*"]]
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource:
+                  - "*"
+
   PipelineBucket:
-    Type: 'AWS::S3::Bucket'
+    Type: "AWS::S3::Bucket"
     Properties:
       BucketName: !Sub ${AWS::StackName}-pipeline-bucket
