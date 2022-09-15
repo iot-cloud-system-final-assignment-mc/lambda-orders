@@ -39,6 +39,7 @@ module.exports.upsertOrder = async (event, context) => {
             }
         }).promise();
 
+        const { v4: uuidv4 } = require('uuid');
         const id = body.order_id || uuidv4();
         const updated_at = Date.now();
         const params = {
